@@ -25,7 +25,10 @@ export default function WeatherWidget() {
 			try {
 				const response	= await fetch("/api/weather");
 				const data		= await response.json();
-
+				if (!data.main) {
+					setError("Weather data unavailable")
+					return
+				}
 				setWeather(data);
 			} catch (error) {
 				setError("Failed to fetch weather");

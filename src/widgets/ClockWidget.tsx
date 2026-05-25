@@ -8,7 +8,6 @@ export default function ClockWidget() {
 	const [now, setNow] = useState(new Date());
 	const [use24Hour, setUse24Hour] = useState(false);
 
-
 	useEffect(() => {
 		const id = setInterval(() => setNow(new Date()), 1000);
 		return () => clearInterval(id);

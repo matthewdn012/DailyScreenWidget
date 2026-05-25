@@ -3,7 +3,7 @@ import express from "express"
 const app	= express();
 const PORT	= 3000;
 
-// GET API request
+// Weather API call
 app.get("/api/weather", async (req, res) => {
 	const city		= req.query.city || "Los Angeles";
 	const apiKey	= process.env.OPENWEATHER_API_KEY;
@@ -22,6 +22,7 @@ app.get("/api/weather", async (req, res) => {
 const stockCache: Record<string, { data:unknown; timestamp: number }> = {};
 const CACHE_TTL = 60*60*1000; // 1 hour in milliseconds
 
+// Stocks API call
 app.get("/api/stocks", async (req, res) => {
 	const tickers	= ["AAPL", "NVDA", "SPY"];
 	const apiKey	= process.env.ALPHAVANTAGE_API_KEY;

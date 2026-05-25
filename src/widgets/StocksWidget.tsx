@@ -18,6 +18,11 @@ export default function StocksWidget() {
 				const response	= await fetch("/api/stocks");
 				const data		= await response.json();
 
+				if (data.error) {
+					setError(data.error);
+					return;
+				}
+
 				setStocks(data);
 			} catch (error) {
 				setError("Failed to fetch stocks");

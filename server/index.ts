@@ -54,7 +54,7 @@ app.get("/api/weather", async (req, res) => {
  * Stocks Section
  */
 const stockCache: Record<string, { data:unknown; timestamp: number }> = {};
-const CACHE_TTL = 60*60*1000; // 1 hour in milliseconds
+const CACHE_TTL = 24*60*60*1000; // 1 hour in milliseconds
 
 // Stocks API call
 app.get("/api/stocks", async (req, res) => {

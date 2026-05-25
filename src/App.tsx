@@ -1,4 +1,5 @@
 import ClockWidget from "./widgets/ClockWidget"
+import NewsWidget from "./widgets/NewsWidget";
 import StocksWidget from "./widgets/StocksWidget";
 import WeatherWidget from "./widgets/WeatherWidget";
 
@@ -8,6 +9,7 @@ export default function App() {
 			<ClockWidget />
 			<WeatherWidget />
 			<StocksWidget />
+			<NewsWidget />
 		</>
 	);
 }

@@ -168,7 +168,8 @@ app.get("/api/system", async (req, res) => {
 			cores:	cpus.length,
 			speed:	cpus[0].speed,
 			usage:	cpuUsage,
-		}
+		},
+    	uptime: Math.round(uptime / 3600)
 	})
 })
 

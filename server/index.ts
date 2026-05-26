@@ -1,5 +1,6 @@
-import express	from "express"
-import os		from "os"
+import express		from "express"
+import os			from "os"
+import Anthropic	from "@anthropic-ai/sdk"
 import "dotenv/config"
 
 function getCpuUsage(): Promise<number> {
@@ -30,6 +31,8 @@ function getCpuUsage(): Promise<number> {
 
 const app	= express();
 const PORT	= 3000;
+
+app.use(express.json());
 
 /**
  * Weather Section
@@ -171,6 +174,53 @@ app.get("/api/system", async (req, res) => {
 		},
     	uptime: Math.round(uptime / 3600)
 	})
+})
+
+const anthropic = new Anthropic({
+	apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+app.post("/api/sentiment", async (req, res) => {
+	const { headlines }	= req.body;
+
+	if (!headlines || !Array.isArray(headlines)) {
+		res.status(400).json({ error: "Headlines array is required" });
+		return;
+	}
+
+	try {
+		const message	= await anthropic.messages.create({
+			model:		"claude-sonnet-4-5",
+			max_tokens:	1024,
+			system: `You are a financial and political news sentiment analyzer.
+			Your job is to score news headlines on a scale from -100 to 100 based on their likely impact on markets, society, and public perception.
+			-100 is extremely negative, 0 is completely neutral, 100 is extremely positive.
+			You must respond with ONLY a valid JSON array, no markdown, no explanation, no backticks.
+			Each object in the array must have exactly two fields: "index" (number) and "score" (number).`,
+			messages:	[
+				{
+					role:		"user",
+					content:	headlines.map((h: string, i: number) => `${i}. ${h}`).join("\n"),
+				},
+				{
+					role:		"assistant",
+					content:	"[",
+				}
+			]
+		})
+
+		const content	= message.content[0];
+		if (content.type !== "text") {
+			res.status(500).json({ error: "Unexpected response from Claude"});
+			return;
+		}
+
+		const sentiments	= JSON.parse("[" + content.text);
+		res.json(sentiments);
+	} catch (error) {
+		console.error("Sentiment error:", error);
+		res.status(500).json({ error: "Failed to analyze sentiment" });
+	}
 })
 
 app.listen(PORT, () => {

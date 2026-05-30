@@ -2,6 +2,7 @@ import express		from "express"
 import os			from "os"
 import Anthropic	from "@anthropic-ai/sdk"
 import "dotenv/config"
+import { stripSource } from "../utils/strings"
 
 function getCpuUsage(): Promise<number> {
   return new Promise((resolve) => {
@@ -34,10 +35,9 @@ const PORT	= 3000;
 
 app.use(express.json());
 
-/**
+/********************************************************************************************
  * Weather Section
- */
-// Weather API call
+ ********************************************************************************************/
 app.get("/api/weather", async (req, res) => {
 	const city		= req.query.city || "Los Angeles";
 	const apiKey	= process.env.OPENWEATHER_API_KEY;
@@ -51,65 +51,136 @@ app.get("/api/weather", async (req, res) => {
 	} catch (error) {
 		res.status(500).json({ error: "Failed to fetch weather data via API" });
 	}
-})
+});
+/********************************************************************************************/
 
-/**
+
+/********************************************************************************************
  * Stocks Section
- */
+ ********************************************************************************************/
 const stockCache: Record<string, { data:unknown; timestamp: number }> = {};
 const CACHE_TTL = 24*60*60*1000; // 1 hour in milliseconds
 
 // Stocks API call
 app.get("/api/stocks", async (req, res) => {
-	const tickers	= ["AAPL", "NVDA", "SPY"];
-	const apiKey	= process.env.ALPHAVANTAGE_API_KEY;
-	const now		= Date.now();
+	const tickers		= ["AAPL", "NVDA", "SPY"];
+	const polygonApiKey	= process.env.POLYGON_API_KEY;
+	const now			= Date.now();
 
 	try {
-		const results = [];
-		for (const ticker of tickers) {
-			const cached = stockCache[ticker];
-			if (cached && now - cached.timestamp < CACHE_TTL) {
-				results.push(cached.data);
-				continue
-			}
+		const results = await Promise.all(
+			tickers.map(async (ticker) => {
+				const cached	= stockCache[ticker];
+				if (cached && now - cached.timestamp < CACHE_TTL)
+				{
+					return cached.data;
+				}
 
-			const response = await fetch(
-				`https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol=${ticker}&apikey=${apiKey}`
-			);
+				const [quoteRes, nameRes] = await Promise.all ([
+					fetch(`https://api.polygon.io/v2/aggs/ticker/${ticker}/prev?apiKey=${polygonApiKey}`),
+					fetch(`https://api.polygon.io/v3/reference/tickers/${ticker}?apiKey=${polygonApiKey}`)
+				]);
 
-			const data = await response.json();
-			console.log("Alpha Vantage response:", JSON.stringify(data));
+				const quoteData		= await quoteRes.json();
+				const nameData		= await nameRes.json();
 
-			if (data["Information"]) {
-				res.status(429).json({ error: "Rate limit hit, try again in a moment" });
-				return;
-			}
+				if (quoteData.status === "ERROR") {
+					throw new Error(quoteData.error);
+				}
 
-			const quote		= data["Global Quote"];
-			const result	= {
-				ticker,
-				price: parseFloat(quote["05. price"]).toFixed(2),
-				change: parseFloat(quote["09. change"]).toFixed(2),
-				changePercent: quote["10. change percent"].replace("%", "").trim(),
-			}
+				const quote			= quoteData.results?.[0];
+				const name			= nameData.results?.name || Symbol;
 
-			stockCache[ticker] = { data: result, timestamp: now };
-			results.push(result);
+				const change		= (quote.c - quote.o).toFixed(2);
+				const changePercent	= (((quote.c - quote.o) / quote.o) * 100).toFixed(2);
 
-			await new Promise(resolve => setTimeout(resolve, 1200));
-		}
-
+				const result = {
+					ticker:			ticker,
+					name,
+					price:			quote.c.toFixed(2),
+					change,
+					changePercent,
+				}
+				stockCache[ticker] = { data: result, timestamp: now };
+				return result;
+			})
+		);
 		res.json(results);
 	} catch(error) {
 		console.error("Stock fetch error:", error);
 		res.status(500).json({ error: "Failed to fetch stock data" });
 	}
-})
+});
 
-/**
+/********************************************************************************************
+ * Stock Analysis Section
+ ********************************************************************************************/
+app.get("/api/stock-analysis/:ticker", async (req, res) => {
+	const ticker		= req.params.ticker.toUpperCase();
+	const polygonApiKey	= process.env.POLYGON_API_KEY;
+	const newsKey		= process.env.NEWSORG_API_KEY;
+
+	try {
+		const cached	= stockCache[ticker];
+		const stockData	= cached ? cached.data as any : null;
+
+		if (!stockData) {
+			res.status(404).json({ error: "Stock data not found, load stocks first" });
+			return;
+		}
+
+		const newsResponse	= await fetch(
+			`https://newsapi.org/v2/everything?q=${encodeURIComponent(stockData.name)}&sortBy=publishedAt&pageSize=3&apiKey=${newsKey}`
+		);
+		const newsData		= await newsResponse.json();
+
+		const headlines		= newsData.articles
+								?.slice(0,3)
+								.map((a: any) => stripSource(a.title))
+								.join("\n") || "No recent headlines found";
+
+		const message		= await anthropic.messages.create({
+			model:		"claude-sonnet-4-5",
+			max_tokens:	1024,
+			system:		`You are a concise financial analyst. Given a stock's price movement and related news headlines, provide 1 concise sentence insight explaining what might be driving the price change. Be direct and specific. Never use markdown.`,
+			messages:	[
+						{
+							role:		"user",
+							content:	`Stock:	${stockData.name} (${ticker})
+										Price:	$${stockData.price}
+										Change:	${stockData.change} (${stockData.changePercent}%)
+										Recent headlines:
+										${headlines}`,
+						}
+			]
+		});
+
+		const content	= message.content[0];
+		if (content.type !== "text") {
+			res.status(500).json({ "error": "Unexpected response from Claude API" });
+			return;
+		}
+
+		res.json({
+			ticker,
+			name:		stockData.name,
+			insight:	content.text,
+			headlines:	newsData.articles?.slice(0,3).map((a: any) => ({
+				title:	stripSource(a.title),
+				url:	a.url,
+			})),
+		});
+	} catch (error) {
+		console.error("Stock analysis error:", error);
+		res.status(500).json({ error: "Failed to generate stock analysis" });
+	}
+});
+/********************************************************************************************/
+
+
+/********************************************************************************************
  * News Section
- */
+ ********************************************************************************************/
 const newsCache: Record<string, { data: unknown; timestamp: number }> = {};
 
 app.get("/api/news", async (req, res) => {
@@ -145,11 +216,14 @@ app.get("/api/news", async (req, res) => {
 	} catch (error) {
 		res.status(500).json({ error: "Failed to fetch news" });
 	}
-})
+});
+/********************************************************************************************/
 
-/**
+
+
+/********************************************************************************************
  * System Health Section
- */
+ ********************************************************************************************/
 app.get("/api/system", async (req, res) => {
 	const totalMem		= os.totalmem();
 	const freeMem		= os.freemem();
@@ -221,7 +295,8 @@ app.post("/api/sentiment", async (req, res) => {
 		console.error("Sentiment error:", error);
 		res.status(500).json({ error: "Failed to analyze sentiment" });
 	}
-})
+});
+/********************************************************************************************/
 
 app.listen(PORT, () => {
 	console.log(`Server running on http://localhost:${PORT}`);

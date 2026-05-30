@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { stripSource, truncate } from "../../utils/strings"
 
 interface Article {
 	title:	string
@@ -12,18 +13,6 @@ interface SentimentResult {
 }
 
 const CATEGORIES = ["technology", "business", "sports", "health", "politics"];
-
-function truncate(text: string, maxLength: number): string {
-	if (text.length <= maxLength) return text
-	return text.slice(0, maxLength) + "..."
-}
-
-function stripSource(title: string): string {
-  const parts = title.split(" - ")
-  if (parts.length <= 1) return title
-  parts.pop()
-  return parts.join(" - ")
-}
 
 function getScoreColor(score: number): string {
 	if (score >= 60) return "#4ade80";

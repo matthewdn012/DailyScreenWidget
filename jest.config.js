@@ -5,13 +5,7 @@ export default {
 	testMatch: ["**/*.test.ts"],
 	transform: {
 		"^.+\\.ts$": ["ts-jest", {
-			tsconfig: {
-				module: "commonjs",
-				moduleResolution: "node",
-				esModuleInterop: true,
-				target: "es2023",
-				types: ["jest", "node"],
-			},
+			tsconfig: "./tsconfig.jest.json",
 		}],
 	},
 }
